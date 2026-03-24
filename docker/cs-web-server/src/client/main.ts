@@ -4,6 +4,7 @@ import gl4esURL from 'xash3d-fwgs/libref_webgl2.wasm?url'
 import {Xash3DWebRTC} from "./webrtc";
 
 const touchControls = document.getElementById('touchControls') as HTMLInputElement
+const valveZipInput = document.getElementById('valveZip') as HTMLInputElement
 touchControls.addEventListener('change', () => {
     localStorage.setItem('touchControls', String(touchControls.checked))
 })
@@ -13,8 +14,21 @@ const usernamePromise = new Promise<string>(resolve => {
     usernamePromiseResolve = resolve
 })
 
-async function fetchWithProgress(url: string) {
+let valveZipPromiseResolve: (file: File) => void
+const valveZipPromise = new Promise<File>(resolve => {
+    valveZipPromiseResolve = resolve
+})
+
+function getProgressElement() {
     const progress = document.getElementById('progress') as HTMLProgressElement
+    progress.max = 1
+    progress.value = 0
+    progress.style.opacity = '1'
+    return progress
+}
+
+async function fetchWithProgress(url: string) {
+    const progress = getProgressElement()
     const res = await fetch(url);
 
     const contentLength = res.headers.get('Content-Length');
@@ -42,6 +56,39 @@ async function fetchWithProgress(url: string) {
 
     const blob = new Blob(chunks);
     return blob.arrayBuffer()
+}
+
+async function readLocalFileWithProgress(file: File) {
+    const progress = getProgressElement()
+
+    return await new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader()
+
+        reader.onprogress = (event) => {
+            if (event.lengthComputable && event.total > 0) {
+                progress.value = event.loaded / event.total
+            }
+        }
+
+        reader.onload = () => {
+            progress.value = 1
+            progress.style.opacity = '0'
+
+            if (!(reader.result instanceof ArrayBuffer)) {
+                reject(new Error('Failed to read valve.zip'))
+                return
+            }
+
+            resolve(reader.result)
+        }
+
+        reader.onerror = () => {
+            progress.style.opacity = '0'
+            reject(reader.error ?? new Error('Failed to read valve.zip'))
+        }
+
+        reader.readAsArrayBuffer(file)
+    })
 }
 
 async function main() {
@@ -79,11 +126,13 @@ async function main() {
         filesMap: config.files_map,
     });
 
+    const zipPromise = valveZipPromise.then(async (file) => {
+        const data = await readLocalFileWithProgress(file)
+        return await loadAsync(data)
+    })
+
     const [zip, extras] = await Promise.all([
-        (async () => {
-            const res = await fetchWithProgress('valve.zip')
-            return await loadAsync(res);
-        })(),
+        zipPromise,
         (async () => {
             const res = await fetch(config.libraries.extras)
             return await res.arrayBuffer();
@@ -147,10 +196,16 @@ if (username) {
 
 (document.getElementById('form') as HTMLFormElement).addEventListener('submit', (e) => {
     e.preventDefault()
+    const valveZip = valveZipInput.files?.[0]
+    if (!valveZip) {
+        valveZipInput.reportValidity()
+        return
+    }
     const username = (document.getElementById('username') as HTMLInputElement).value
     localStorage.setItem('username', username);
     (document.getElementById('form') as HTMLFormElement).style.display = 'none';
     (document.getElementById('social') as HTMLDivElement).style.display = 'none';
+    valveZipPromiseResolve(valveZip)
     usernamePromiseResolve(username)
 })
 
