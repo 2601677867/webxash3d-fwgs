@@ -2,8 +2,8 @@ services:
   xash3d:
     image: yohimik/cs-web-server:latest
     build:
-      context: ../../
-      dockerfile: ./docker/cs-web-server/Dockerfile
+      context: .
+      dockerfile: ./Dockerfile
       tags:
         - yohimik/cs-web-server:latest
         - yohimik/cs-web-server:${TAG}
